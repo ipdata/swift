@@ -141,7 +141,25 @@ final class IPDataClientTests: XCTestCase {
             XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
             XCTAssertEqual(request.value(forHTTPHeaderField: "api-key"), "test-api-key")
 
-            let body = try! JSONDecoder().decode([String].self, from: request.httpBody!)
+            // On macOS, URLProtocol delivers the body via httpBodyStream instead of httpBody.
+            let bodyData: Data
+            if let httpBody = request.httpBody {
+                bodyData = httpBody
+            } else if let stream = request.httpBodyStream {
+                stream.open()
+                var buffer = [UInt8](repeating: 0, count: 1024)
+                var collected = Data()
+                while stream.hasBytesAvailable {
+                    let read = stream.read(&buffer, maxLength: buffer.count)
+                    if read <= 0 { break }
+                    collected.append(buffer, count: read)
+                }
+                stream.close()
+                bodyData = collected
+            } else {
+                XCTFail("Expected HTTP body"); return (HTTPURLResponse(), Data())
+            }
+            let body = try! JSONDecoder().decode([String].self, from: bodyData)
             XCTAssertEqual(body, ["1.1.1.1", "8.8.8.8"])
 
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
