@@ -26,7 +26,7 @@ public struct IPResponse: Codable, Sendable, Equatable {
     public let carrier: Carrier?
     public let languages: [Language]?
     public let currency: Currency?
-    public let timeZone: TimeZone?
+    public let timeZone: TimeZoneInfo?
     public let threat: Threat?
     /// Number of API requests made in the last 24 hours.
     /// The API may return this as either a number or a string.
@@ -76,7 +76,7 @@ public struct IPResponse: Codable, Sendable, Equatable {
         carrier = try c.decodeIfPresent(Carrier.self, forKey: .carrier)
         languages = try c.decodeIfPresent([Language].self, forKey: .languages)
         currency = try c.decodeIfPresent(Currency.self, forKey: .currency)
-        timeZone = try c.decodeIfPresent(TimeZone.self, forKey: .timeZone)
+        timeZone = try c.decodeIfPresent(TimeZoneInfo.self, forKey: .timeZone)
         threat = try c.decodeIfPresent(Threat.self, forKey: .threat)
         // The API returns count as either an Int or a String.
         if let intVal = try? c.decodeIfPresent(Int.self, forKey: .count) {
@@ -171,7 +171,7 @@ public struct Currency: Codable, Sendable, Equatable {
 // MARK: - TimeZone
 
 /// Time zone information for the IP address location.
-public struct TimeZone: Codable, Sendable, Equatable {
+public struct TimeZoneInfo: Codable, Sendable, Equatable {
     public let name: String?
     public let abbr: String?
     public let offset: String?
