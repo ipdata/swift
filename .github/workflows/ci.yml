@@ -36,3 +36,48 @@ jobs:
         run: swift build
       - name: Test
         run: swift test
+
+  release:
+    name: Tag and release
+    needs: [test-linux, test-macos]
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      created: ${{ steps.release.outputs.created }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read the version from the README install snippet
+        id: version
+        run: |
+          VERSION="$(sed -nE 's/.*from: *"([^"]+)".*/\1/p' README.md | head -1)"
+          if [ -z "$VERSION" ]; then
+            echo "No 'from:' version found in the README.md install snippet." >&2
+            exit 1
+          fi
+          echo "Version in README.md: $VERSION"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Create the tag and the GitHub release when the tag is missing
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          status=0
+          git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null || status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "Tag $TAG already exists; nothing to release."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          elif [ "$status" -ne 2 ]; then
+            echo "Could not check origin for tag $TAG (git ls-remote exited with $status)." >&2
+            exit "$status"
+          fi
+          echo "Tag $TAG does not exist; creating it and the GitHub release at $GITHUB_SHA."
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          echo "created=true" >> "$GITHUB_OUTPUT"
