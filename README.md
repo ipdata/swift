@@ -15,7 +15,7 @@ Add the dependency to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/ipdata/swift.git", from: "1.0.0")
+    .package(url: "https://github.com/ipdata/swift.git", from: "1.0.2")
 ]
 ```
 
@@ -40,6 +40,24 @@ print(info.city ?? "")          // Mountain View
 print(info.countryName ?? "")   // United States
 print(info.threat?.isVPN ?? false)
 ```
+
+## Connection reuse and HTTP/2
+
+An `IPDataClient` keeps a persistent HTTPS connection pool for as long as it lives. Create one client per process (or one per API key or endpoint), keep it, and reuse it for every lookup. HTTP/2 and keep-alive are automatic: `URLSession` negotiates HTTP/2 with api.ipdata.co when the platform supports it (Apple platforms, and Linux when libcurl was built with HTTP/2), multiplexes requests over one connection, and falls back to HTTP/1.1 keep-alive otherwise. Only the first request pays the TCP and TLS handshake; nothing needs to be configured.
+
+By default the client sends its requests through `URLSession.shared`, the process-wide session, so its connections are shared with the rest of your app and survive the client itself. To give a client a dedicated session, pass a `URLSessionConfiguration`; the client creates that session once, owns it, and invalidates it (`finishTasksAndInvalidate()`) when the client is deallocated:
+
+```swift
+let configuration = URLSessionConfiguration.default
+configuration.timeoutIntervalForRequest = 10
+let client = IPDataClient(apiKey: "YOUR_API_KEY", configuration: configuration)
+```
+
+You can still inject a ready-made `URLSession` with `IPDataClient(apiKey:baseURL:session:)`, for example one with a custom delegate or a mock `URLProtocol` in tests; the client never invalidates a session it did not create.
+
+`IPDataClient` is immutable and `Sendable`: share one instance across threads and Swift concurrency tasks. There is nothing to close explicitly; let the client be released and its owned session, if it has one, is invalidated for you (`URLSession.shared` is never invalidated).
+
+A bulk lookup (`POST /bulk`) that fails with `URLError.networkConnectionLost`, typically because the server closed an idle pooled connection, is sent once more over a fresh connection. No other request is retried by the client, and nothing is retried once an HTTP status has been received.
 
 ## Usage
 
