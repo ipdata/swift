@@ -147,6 +147,20 @@ final class IPDataClientTests: XCTestCase {
         XCTAssertEqual(info.city, "Mountain View")
     }
 
+    func testFieldsParameterPassesNewFieldNamesThrough() async throws {
+        // The client does not validate field names; the new ones are sent as given.
+        MockURLProtocol.requestHandler = { request in
+            let query = request.url!.query!
+            XCTAssertTrue(query.contains("fields=is_satellite,is_anycast,is_eu"), "Query: \(query)")
+            return okResponse(for: request, json: #"{"is_anycast": true, "is_eu": false}"#)
+        }
+
+        let info = try await client.lookup("8.8.8.8", fields: ["is_satellite", "is_anycast", "is_eu"])
+        XCTAssertTrue(info.isAnycast)
+        XCTAssertFalse(info.isSatellite)
+        XCTAssertEqual(info.isEU, false)
+    }
+
     func testLookupFieldReturnsRawData() async throws {
         let asnJSON = #"{"asn": "AS15169", "name": "Google LLC"}"#
         MockURLProtocol.requestHandler = { request in

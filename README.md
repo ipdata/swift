@@ -123,8 +123,25 @@ if let threat = info.threat {
     print("Trust score: \(threat.scores?.trustScore ?? 0)")
 
     for entry in threat.blocklists ?? [] {
-        print("Listed on: \(entry.name ?? "")")
+        print("Listed on: \(entry.name ?? "") (\(entry.type ?? ""))")
+        if let firstSeen = entry.firstSeen, let lastSeen = entry.lastSeen {
+            print("  seen \(firstSeen) to \(lastSeen), \(entry.daysSeen ?? 0) day(s)")
+        }
     }
+}
+```
+
+### Satellite and Anycast Flags
+
+`isSatellite` and `isAnycast` are plain `Bool`s. The API includes `is_satellite` and `is_anycast` in a response only when they are true, so both read `false` whenever the key is absent:
+
+```swift
+let info = try await client.lookup("8.8.8.8")
+if info.isAnycast {
+    print("anycast address")
+}
+if info.isSatellite {
+    print("satellite internet provider")
 }
 ```
 
@@ -173,6 +190,8 @@ The primary response type for IP lookups.
 |---|---|---|
 | `ip` | `String?` | IP address |
 | `isEU` | `Bool?` | Located in the EU |
+| `isSatellite` | `Bool` | Satellite internet provider. The API sends `is_satellite` only when it is true; reads `false` when the key is absent |
+| `isAnycast` | `Bool` | Anycast address. The API sends `is_anycast` only when it is true; reads `false` when the key is absent |
 | `city` | `String?` | City name |
 | `region` | `String?` | Region / state |
 | `regionCode` | `String?` | Region code |
@@ -202,5 +221,20 @@ Detailed ASN data from the dedicated `/asn` endpoint. Includes `ipv4Prefixes`, `
 ### Threat
 
 Threat intelligence flags: `isTor`, `isVPN`, `isICloudRelay`, `isProxy`, `isDatacenter`, `isAnonymous`, `isKnownAttacker`, `isKnownAbuser`, `isThreat`, `isBogon`. Includes `blocklists` and reputation `scores` (0-100 for VPN, proxy, threat, and trust).
+
+### Blocklist
+
+One entry per list in `threat.blocklists`:
+
+| Property | Type | Description |
+|---|---|---|
+| `name` | `String?` | Name of the blocklist |
+| `site` | `String?` | Website of the blocklist |
+| `type` | `String?` | Kind of list (`vpn`, `cloud`, `general`, ...) |
+| `firstSeen` | `String?` | First day the IP was seen on the list, `YYYY-MM-DD` (UTC) |
+| `lastSeen` | `String?` | Last day the IP was seen on the list, `YYYY-MM-DD` (UTC) |
+| `daysSeen` | `Int?` | Number of days the IP has been seen on the list |
+
+Some feeds, such as ipdata's own VPN feed, omit `firstSeen`, `lastSeen` and `daysSeen`; those entries decode with the three properties set to `nil`. The dates are kept as strings exactly as the API sends them.
 
 All model types conform to `Codable`, `Sendable`, and `Equatable`.
