@@ -222,6 +222,21 @@ final class IPDataClientTests: XCTestCase {
         XCTAssertEqual(results[1].ip, "8.8.8.8")
     }
 
+    func testBulkLookupSendsTheAPIKeyOnceAsAQueryItem() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+            let items = components.queryItems ?? []
+            let apiKeyItems = items.filter { $0.name == "api-key" }
+            XCTAssertEqual(apiKeyItems.count, 1, "Query: \(components.query ?? "")")
+            XCTAssertEqual(apiKeyItems.first?.value, "test-api-key")
+            XCTAssertTrue(items.contains(where: { $0.name == "fields" && $0.value == "ip" }))
+            return okResponse(for: request, json: #"[{"ip": "1.1.1.1"}]"#)
+        }
+
+        _ = try await client.bulkLookup(["1.1.1.1"], fields: ["ip"])
+        XCTAssertEqual(MockURLProtocol.requestCount, 1)
+    }
+
     // MARK: - Connection Reuse
 
     func testConsecutiveRequestsGoThroughTheSameInjectedSession() async throws {

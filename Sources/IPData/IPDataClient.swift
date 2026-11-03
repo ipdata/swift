@@ -134,11 +134,9 @@ public final class IPDataClient: @unchecked Sendable {
     ///   - fields: Optional list of fields to return.
     /// - Returns: An array of ``IPResponse`` results, one per IP.
     public func bulkLookup(_ ips: [String], fields: [String]? = nil) async throws -> [IPResponse] {
-        var url = buildURL(path: "/bulk", fields: fields)
-        // For bulk, the api-key must be a query parameter
-        if !url.absoluteString.contains("api-key") {
-            url = appendAPIKey(to: url)
-        }
+        // For bulk, the api-key must be a query parameter; `buildURL` adds it to
+        // every URL, so nothing else is needed here.
+        let url = buildURL(path: "/bulk", fields: fields)
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -174,14 +172,6 @@ public final class IPDataClient: @unchecked Sendable {
             queryItems.append(URLQueryItem(name: "fields", value: fields.joined(separator: ",")))
         }
         components.queryItems = queryItems
-        return components.url!
-    }
-
-    private func appendAPIKey(to url: URL) -> URL {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        var items = components.queryItems ?? []
-        items.append(URLQueryItem(name: "api-key", value: apiKey))
-        components.queryItems = items
         return components.url!
     }
 
