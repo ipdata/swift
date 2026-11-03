@@ -195,6 +195,7 @@ The primary response type for IP lookups.
 | `city` | `String?` | City name |
 | `region` | `String?` | Region / state |
 | `regionCode` | `String?` | Region code |
+| `regionType` | `String?` | Kind of region (for example `state` or `province`) |
 | `countryName` | `String?` | Country name |
 | `countryCode` | `String?` | ISO 3166-1 alpha-2 code |
 | `continentName` | `String?` | Continent name |
@@ -205,18 +206,23 @@ The primary response type for IP lookups.
 | `callingCode` | `String?` | International calling code |
 | `flag` | `String?` | Flag image URL |
 | `emojiFlag` | `String?` | Flag emoji |
+| `emojiUnicode` | `String?` | Flag emoji as Unicode code points (for example `U+1F1FA U+1F1F8`) |
 | `asn` | `ASN?` | Autonomous system info |
 | `company` | `Company?` | Organization that owns the IP |
 | `carrier` | `Carrier?` | Mobile carrier info |
 | `languages` | `[Language]?` | Languages spoken in the country |
 | `currency` | `Currency?` | Local currency |
-| `timeZone` | `TimeZone?` | Time zone details |
+| `timeZone` | `TimeZoneInfo?` | Time zone details |
 | `threat` | `Threat?` | Threat intelligence data |
 | `count` | `Int?` | API requests in last 24 hours |
 
 ### ASNDetail
 
 Detailed ASN data from the dedicated `/asn` endpoint. Includes `ipv4Prefixes`, `ipv6Prefixes`, `numIPs`, `upstream`, `downstream`, and `peers`.
+
+### TimeZoneInfo
+
+Time zone of the IP address location: `name`, `abbr`, `offset`, `isDST` and `currentTime`. The type is called `TimeZoneInfo` so that it does not shadow Foundation's `TimeZone`.
 
 ### Threat
 
