@@ -244,3 +244,7 @@ One entry per list in `threat.blocklists`:
 Some feeds, such as ipdata's own VPN feed, omit `firstSeen`, `lastSeen` and `daysSeen`; those entries decode with the three properties set to `nil`. The dates are kept as strings exactly as the API sends them.
 
 All model types conform to `Codable`, `Sendable`, and `Equatable`.
+
+## Releasing
+
+The package version is the one in the `from:` argument of the Swift Package Manager snippet under [Installation](#installation); a Swift package has no other version file. To release, bump that version in a pull request and merge it. On every push to `main` that passes the test matrices, CI reads the version from `README.md` and, when the tag `vx.y.z` does not exist yet, creates the tag and the GitHub release at the merge commit with generated release notes. Swift Package Manager and the [Swift Package Index](https://swiftpackageindex.com) pick new versions up from the Git tags, so nothing else is published. A merge whose version is already tagged releases nothing.
