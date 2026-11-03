@@ -244,7 +244,11 @@ public final class IPDataClient: @unchecked Sendable {
 
 // MARK: - Linux Async Compatibility
 
-#if canImport(FoundationNetworking)
+// swift-corelibs-foundation ships the async `URLSession.data(for:delegate:)` from
+// Swift 6.0 on; the 5.9 and 5.10 toolchains on Linux lack it and use this shim instead.
+// It is compiled only for those toolchains so that it never sits next to the native
+// method.
+#if canImport(FoundationNetworking) && compiler(<6.0)
 extension URLSession {
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         try await withCheckedThrowingContinuation { continuation in
