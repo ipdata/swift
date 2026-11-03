@@ -12,6 +12,12 @@ import FoundationNetworking
 /// let info = try await client.lookup("8.8.8.8")
 /// print(info.city ?? "unknown")
 /// ```
+///
+/// Create one client per process (or per API key or endpoint) and reuse it for every
+/// lookup. Its `URLSession` keeps HTTPS connections alive between requests and
+/// multiplexes them over HTTP/2 where the platform negotiates it, so only the first
+/// request pays the TCP and TLS handshake. The client is immutable and `Sendable`:
+/// one instance can be shared across threads and tasks.
 public final class IPDataClient: @unchecked Sendable {
 
     /// The base URL for the standard API.
@@ -22,6 +28,9 @@ public final class IPDataClient: @unchecked Sendable {
     private let apiKey: String
     private let baseURL: URL
     private let session: URLSession
+    /// Whether `session` was created by this client, which then invalidates it in
+    /// `deinit`, or was supplied by the caller, who keeps ownership of it.
+    private let ownsSession: Bool
     private let decoder: JSONDecoder
 
     /// Creates a new client.
@@ -30,16 +39,57 @@ public final class IPDataClient: @unchecked Sendable {
     ///   - apiKey: Your ipdata API key.
     ///   - baseURL: Override the base URL (defaults to `https://api.ipdata.co`).
     ///              Use ``euBaseURL`` to route through EU servers only.
-    ///   - session: A custom `URLSession` if needed (e.g. for testing).
-    public init(
+    ///   - session: A custom `URLSession` if needed (e.g. for testing). Defaults to
+    ///              `URLSession.shared`, whose connection pool is shared by the whole
+    ///              process. The client never invalidates a session passed in here.
+    public convenience init(
         apiKey: String,
         baseURL: URL = IPDataClient.defaultBaseURL,
         session: URLSession = .shared
     ) {
+        self.init(apiKey: apiKey, baseURL: baseURL, session: session, ownsSession: false)
+    }
+
+    /// Creates a client that owns a dedicated `URLSession` built from `configuration`.
+    ///
+    /// The session is created once and keeps its connections alive for as long as the
+    /// client lives; it is invalidated with `finishTasksAndInvalidate()` when the client
+    /// is deallocated. Use this to give the client its own connection pool instead of
+    /// `URLSession.shared`, or to set custom timeouts, proxies or additional headers.
+    ///
+    /// - Parameters:
+    ///   - apiKey: Your ipdata API key.
+    ///   - baseURL: Override the base URL (defaults to `https://api.ipdata.co`).
+    ///              Use ``euBaseURL`` to route through EU servers only.
+    ///   - configuration: The configuration of the client's own session, for example
+    ///                    `URLSessionConfiguration.default` with a custom timeout.
+    public convenience init(
+        apiKey: String,
+        baseURL: URL = IPDataClient.defaultBaseURL,
+        configuration: URLSessionConfiguration
+    ) {
+        self.init(
+            apiKey: apiKey,
+            baseURL: baseURL,
+            session: URLSession(configuration: configuration),
+            ownsSession: true
+        )
+    }
+
+    private init(apiKey: String, baseURL: URL, session: URLSession, ownsSession: Bool) {
         self.apiKey = apiKey
         self.baseURL = baseURL
         self.session = session
+        self.ownsSession = ownsSession
         self.decoder = JSONDecoder()
+    }
+
+    deinit {
+        // Only a session created by this client is torn down here. `URLSession.shared`
+        // and injected sessions belong to the caller and must never be invalidated.
+        if ownsSession {
+            session.finishTasksAndInvalidate()
+        }
     }
 
     // MARK: - IP Lookup
@@ -93,10 +143,14 @@ public final class IPDataClient: @unchecked Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(apiKey, forHTTPHeaderField: "api-key")
         request.httpBody = try JSONEncoder().encode(ips)
 
-        return try await perform(request)
+        // POST is not idempotent, so URLSession does not resend it by itself when a
+        // pooled connection turns out to have been closed by the server while idle;
+        // `dataTask` retries that single case once.
+        return try await perform(request, retryOnConnectionLoss: true)
     }
 
     // MARK: - ASN Lookup
@@ -134,19 +188,21 @@ public final class IPDataClient: @unchecked Sendable {
     private func fetch<T: Decodable>(_ url: URL) async throws -> T {
         var request = URLRequest(url: url)
         request.setValue(apiKey, forHTTPHeaderField: "api-key")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         return try await perform(request)
     }
 
     private func fetchRaw(_ url: URL) async throws -> Data {
         var request = URLRequest(url: url)
         request.setValue(apiKey, forHTTPHeaderField: "api-key")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await dataTask(request)
         try checkResponse(response, data: data)
         return data
     }
 
-    private func perform<T: Decodable>(_ request: URLRequest) async throws -> T {
-        let (data, response) = try await dataTask(request)
+    private func perform<T: Decodable>(_ request: URLRequest, retryOnConnectionLoss: Bool = false) async throws -> T {
+        let (data, response) = try await dataTask(request, retryOnConnectionLoss: retryOnConnectionLoss)
         try checkResponse(response, data: data)
         do {
             return try decoder.decode(T.self, from: data)
@@ -155,9 +211,25 @@ public final class IPDataClient: @unchecked Sendable {
         }
     }
 
-    private func dataTask(_ request: URLRequest) async throws -> (Data, URLResponse) {
+    /// Sends `request` on the client's session and wraps transport failures in
+    /// ``IPDataError/networkError(_:)``.
+    ///
+    /// With `retryOnConnectionLoss`, a request that fails with
+    /// `URLError.networkConnectionLost` is sent exactly once more. That is the error a
+    /// pooled connection produces when the server closed it while it was idle: no
+    /// response was received, the request never reached the application, and
+    /// `URLSession` opens a fresh connection for the second attempt. Nothing else is
+    /// retried, and HTTP statuses are never retried: they are turned into errors by
+    /// `checkResponse` after this returns.
+    private func dataTask(_ request: URLRequest, retryOnConnectionLoss: Bool = false) async throws -> (Data, URLResponse) {
         do {
             return try await session.data(for: request)
+        } catch let error as URLError where retryOnConnectionLoss && error.code == .networkConnectionLost {
+            do {
+                return try await session.data(for: request)
+            } catch {
+                throw IPDataError.networkError(error)
+            }
         } catch {
             throw IPDataError.networkError(error)
         }

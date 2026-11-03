@@ -6,6 +6,16 @@ import Foundation
 public struct IPResponse: Codable, Sendable, Equatable {
     public let ip: String?
     public let isEU: Bool?
+    /// Whether the address belongs to a satellite internet provider.
+    ///
+    /// The API sends `is_satellite` only when it is true, so this reads `false`
+    /// whenever the key is absent from the response.
+    public let isSatellite: Bool
+    /// Whether the address is anycast, i.e. announced from several locations at once.
+    ///
+    /// The API sends `is_anycast` only when it is true, so this reads `false`
+    /// whenever the key is absent from the response.
+    public let isAnycast: Bool
     public let city: String?
     public let region: String?
     public let regionCode: String?
@@ -35,6 +45,8 @@ public struct IPResponse: Codable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey {
         case ip
         case isEU = "is_eu"
+        case isSatellite = "is_satellite"
+        case isAnycast = "is_anycast"
         case city, region
         case regionCode = "region_code"
         case regionType = "region_type"
@@ -56,6 +68,9 @@ public struct IPResponse: Codable, Sendable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         ip = try c.decodeIfPresent(String.self, forKey: .ip)
         isEU = try c.decodeIfPresent(Bool.self, forKey: .isEU)
+        // The API includes these two keys only when they are true.
+        isSatellite = try c.decodeIfPresent(Bool.self, forKey: .isSatellite) ?? false
+        isAnycast = try c.decodeIfPresent(Bool.self, forKey: .isAnycast) ?? false
         city = try c.decodeIfPresent(String.self, forKey: .city)
         region = try c.decodeIfPresent(String.self, forKey: .region)
         regionCode = try c.decodeIfPresent(String.self, forKey: .regionCode)
@@ -220,10 +235,27 @@ public struct Threat: Codable, Sendable, Equatable {
 // MARK: - Blocklist
 
 /// A blocklist entry that an IP address appears on.
+///
+/// `firstSeen`, `lastSeen` and `daysSeen` are omitted by some feeds (for example
+/// ipdata's own VPN feed), so they are optional. The dates are kept as the
+/// `YYYY-MM-DD` (UTC) strings the API sends.
 public struct Blocklist: Codable, Sendable, Equatable {
     public let name: String?
     public let site: String?
     public let type: String?
+    /// First day the address was seen on this list, as `YYYY-MM-DD` (UTC).
+    public let firstSeen: String?
+    /// Last day the address was seen on this list, as `YYYY-MM-DD` (UTC).
+    public let lastSeen: String?
+    /// Number of days the address has been seen on this list.
+    public let daysSeen: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case name, site, type
+        case firstSeen = "first_seen"
+        case lastSeen = "last_seen"
+        case daysSeen = "days_seen"
+    }
 }
 
 // MARK: - ThreatScores
